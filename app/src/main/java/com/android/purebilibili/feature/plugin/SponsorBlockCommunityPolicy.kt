@@ -27,18 +27,18 @@ internal data class SponsorBlockCategorySetting(
 internal fun defaultSponsorBlockCategoryBehaviors(
     autoSkip: Boolean = true,
     skipSponsor: Boolean = true,
-    skipIntro: Boolean = true,
-    skipOutro: Boolean = true,
-    skipInteraction: Boolean = true
+    skipIntro: Boolean = false,
+    skipOutro: Boolean = false,
+    skipInteraction: Boolean = false
 ): Map<String, SponsorBlockSegmentBehavior> {
     val fallback = if (autoSkip) SponsorBlockSegmentBehavior.AUTOMATIC else SponsorBlockSegmentBehavior.MANUAL
-    return SponsorCategory.ALL_SKIP_CATEGORIES.associateWith { category ->
+    return SponsorCategory.ALL_CATEGORIES.associateWith { category ->
         when (category) {
             SponsorCategory.SPONSOR -> if (skipSponsor) fallback else SponsorBlockSegmentBehavior.DISABLED
             SponsorCategory.INTRO -> if (skipIntro) fallback else SponsorBlockSegmentBehavior.DISABLED
             SponsorCategory.OUTRO -> if (skipOutro) fallback else SponsorBlockSegmentBehavior.DISABLED
             SponsorCategory.INTERACTION -> if (skipInteraction) fallback else SponsorBlockSegmentBehavior.DISABLED
-            else -> fallback
+            else -> SponsorBlockSegmentBehavior.DISABLED
         }
     }
 }

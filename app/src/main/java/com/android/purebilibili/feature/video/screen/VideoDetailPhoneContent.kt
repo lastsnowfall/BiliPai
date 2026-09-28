@@ -230,6 +230,7 @@ internal fun VideoDetailPhoneSuccessContentLayer(
                         ) {
                             VideoContentSection(
                                 data = VideoContentData(
+                                    sponsorVideoNotice = success.sponsorVideoNotice,
                                     info = engagementSuccess.info,
                                     introListState = introListState,
                                     commentListState = commentListState,

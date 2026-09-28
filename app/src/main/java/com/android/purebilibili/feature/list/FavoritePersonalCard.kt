@@ -163,6 +163,7 @@ internal fun FavoritePersonalCard(
     }
 
     PersonalMediaCardFrame(
+        bvid = item.bvid,
         stacked = stacked,
         coverModifier = Modifier.onGloballyPositioned {
             coverBounds.value = it.boundsInRoot()

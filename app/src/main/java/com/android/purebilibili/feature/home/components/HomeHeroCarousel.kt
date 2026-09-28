@@ -489,6 +489,7 @@ private fun HomeHeroCarouselCard(
                         )
                     )
             )
+            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(video.bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
             // 底部标题与统计（时长 · 播放 · 弹幕）
             Column(
                 modifier = Modifier

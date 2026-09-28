@@ -13,6 +13,26 @@ import kotlin.test.assertTrue
 class SponsorBlockPluginPolicyTest {
 
     @Test
+    fun sponsorBlockDefaults_onlySkipAdsAndKeepUploadsDisabled() {
+        val config = SponsorBlockConfig().normalized()
+        assertEquals(listOf(SponsorCategory.SPONSOR), config.requestedCategories)
+        assertEquals(SponsorBlockSegmentBehavior.AUTOMATIC, config.behaviorFor(SponsorCategory.SPONSOR))
+        assertTrue(!config.communityContributionEnabled)
+        assertTrue(!config.communityTrackingEnabled)
+    }
+
+    @Test
+    fun sponsorBlockDefaults_preserveExistingExplicitCategoryPreferences() {
+        val config = SponsorBlockConfig(categoryBehaviorRaw = mapOf(
+            SponsorCategory.SPONSOR to SponsorBlockSegmentBehavior.MANUAL.name,
+            SponsorCategory.INTRO to SponsorBlockSegmentBehavior.AUTOMATIC.name,
+        )).normalized()
+        assertEquals(SponsorBlockSegmentBehavior.MANUAL, config.behaviorFor(SponsorCategory.SPONSOR))
+        assertEquals(SponsorBlockSegmentBehavior.AUTOMATIC, config.behaviorFor(SponsorCategory.INTRO))
+    }
+
+
+    @Test
     fun normalizeSponsorSegments_discardsInvalidRangesAndSortsByStartTime() {
         val normalized = normalizeSponsorSegments(
             listOf(
@@ -27,13 +47,13 @@ class SponsorBlockPluginPolicyTest {
     }
 
     @Test
-    fun normalizeSponsorSegments_keepsBestVotedSegmentPerCategory() {
+    fun normalizeSponsorSegments_keepsBestVotedSubmissionForIdenticalRange() {
         val normalized = normalizeSponsorSegments(
             listOf(
                 sponsorSegment(
                     uuid = "bad_intro",
-                    startSeconds = 3f,
-                    endSeconds = 20f,
+                    startSeconds = 6f,
+                    endSeconds = 10f,
                     category = SponsorCategory.INTRO,
                     votes = -2
                 ),
@@ -58,13 +78,13 @@ class SponsorBlockPluginPolicyTest {
     }
 
     @Test
-    fun normalizeSponsorSegments_prefersLockedSegmentWithinSameCategory() {
+    fun normalizeSponsorSegments_prefersLockedSubmissionForIdenticalRange() {
         val normalized = normalizeSponsorSegments(
             listOf(
                 sponsorSegment(
                     uuid = "popular_intro",
-                    startSeconds = 5f,
-                    endSeconds = 12f,
+                    startSeconds = 6f,
+                    endSeconds = 11f,
                     category = SponsorCategory.INTRO,
                     votes = 20,
                     locked = 0

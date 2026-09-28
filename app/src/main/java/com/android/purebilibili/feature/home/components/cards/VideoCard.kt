@@ -1281,6 +1281,7 @@ internal fun ElegantVideoCard(
                         enabled = effectiveTransitionEnabled,
                     ),
             ) {
+            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(video.bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (premiumBadgeLabel != null) {
                 HomeVideoBadgePill(
                     style = badgeStylePolicy.coverStyle,
@@ -1289,7 +1290,7 @@ internal fun ElegantVideoCard(
                     containerColor = BiliPink.copy(alpha = if (badgeStylePolicy.coverStyle == HomeVideoBadgeStyle.GLASS) 0.78f else 1f),
                     borderColor = MediaContrastPalette.Foreground.copy(alpha = 0.24f),
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .padding(AppSpacingTokens.Small)
                 ) {
                     AppText(

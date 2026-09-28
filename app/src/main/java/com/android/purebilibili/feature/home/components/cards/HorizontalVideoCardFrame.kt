@@ -44,6 +44,7 @@ internal fun HorizontalVideoCardFrame(
     stacked: Boolean = false,
     minimumHeight: Dp? = null,
     infoVerticalArrangement: Arrangement.Vertical = Arrangement.SpaceBetween,
+    bvid: String = "",
 ) {
     val effectiveAspectRatio = coverAspectRatio.takeIf { it > 1f }
         ?: HORIZONTAL_VIDEO_CARD_COVER_ASPECT_RATIO
@@ -64,13 +65,16 @@ internal fun HorizontalVideoCardFrame(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     coverContent()
+                    if (coverOverlayContent == null) com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
                     if (coverOverlayContent != null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(coverOverlayModifier),
-                            content = coverOverlayContent,
-                        )
+                        ) {
+                            coverOverlayContent()
+                            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
+                        }
                     }
                 }
                 Column(
@@ -107,13 +111,16 @@ internal fun HorizontalVideoCardFrame(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     coverContent()
+                    if (coverOverlayContent == null) com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
                     if (coverOverlayContent != null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(coverOverlayModifier),
-                            content = coverOverlayContent,
-                        )
+                        ) {
+                            coverOverlayContent()
+                            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
+                        }
                     }
                 }
 

@@ -216,6 +216,7 @@ data class VideoItem(
     val recommendationFeedback: RecommendationFeedbackMetadata? = null,
     val contentType: String = "",
     val navigationUrl: String = "",
+    @kotlinx.serialization.Transient val isPriorityRecommendation: Boolean = false,
 )
 
 @Serializable

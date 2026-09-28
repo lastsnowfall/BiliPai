@@ -1397,6 +1397,7 @@ private fun WatchLaterVideoCard(
     val cardShellShape = AppShapes.container(ContainerLevel.Card)
 
     PersonalMediaCardFrame(
+        bvid = item.bvid,
         stacked = stacked,
         coverModifier = Modifier.onGloballyPositioned { coordinates ->
             coverBoundsRef.value = coordinates.boundsInRoot()

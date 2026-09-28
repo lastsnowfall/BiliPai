@@ -1,3 +1,13 @@
+> **广告跳过定制版（2026-09-26 最终交付）**
+>
+> 基于 [jay3-yy/BiliPai](https://github.com/jay3-yy/BiliPai) 的 `fd0ac74` 修改，保留上游 GPL-3.0 许可证与作者信息。
+> 默认启用广告片段自动跳过，显示绿色广告进度段及商单角标；每 20 个视频的第 4 格用于重点关注 UP，观看达到 90% 的视频不再进入首页推荐。未加入个人标注上传或投票功能。
+>
+> 安装包见本仓库 Releases：`BiliPai-0.2.3-alpha.4-auto-skip-dev.apk`。这是 Android 8.0+ / ARM64 的 Dev 版本，非上游官方签名。
+> 2026-09-26 的验证记录：47 项检查、Dev APK 构建与 v2 签名验证通过；真机播放、通知、深色模式和平板界面尚未验收。
+> 详细实现：[广告跳过](docs/wiki/SPONSORBLOCK_INTEGRATION.md)、[推荐策略](docs/wiki/PRIORITY_CREATORS.md)。
+
+---
 <div align="center">
 
 <img src="docs/images/233娘.jpeg" height="96" alt="BiliPai" />

@@ -214,6 +214,7 @@ internal fun HomeStyleSingleColumnVideoCard(
     }
     val moreHaptic = rememberHapticFeedback()
     HorizontalVideoCardFrame(
+        bvid = video.bvid,
         modifier = modifier
             .adaptiveCardHoverEffect(shape = cardShape)
             .onGloballyPositioned { coordinates ->

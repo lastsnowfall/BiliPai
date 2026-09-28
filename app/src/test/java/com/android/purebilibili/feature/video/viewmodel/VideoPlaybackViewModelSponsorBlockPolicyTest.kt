@@ -70,8 +70,8 @@ class VideoPlaybackViewModelSponsorBlockPolicyTest {
     }
 
     @Test
-    fun sponsorBlockSkip_forcesPlaybackResumeEvenWhenPlayerWasPaused() {
-        assertTrue(
+    fun sponsorBlockSkip_preservesPlaybackPauseState() {
+        assertFalse(
             shouldResumePlaybackAfterSponsorBlockSkip(
                 playWhenReadyBeforeSkip = false
             )

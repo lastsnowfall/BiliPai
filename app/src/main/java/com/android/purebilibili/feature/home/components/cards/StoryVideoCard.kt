@@ -391,6 +391,7 @@ internal fun StoryVideoCard(
                     .fillMaxSize()
                     .then(nativeCardSnapshot.coverOverlayModifier),
             ) {
+            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(video.bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (premiumBadgeLabel != null) {
                 HomeVideoBadgePill(
                     style = badgeStylePolicy.coverStyle,
@@ -398,7 +399,7 @@ internal fun StoryVideoCard(
                     containerColor = BiliPink.copy(alpha = 0.82f),
                     borderColor = MediaContrastPalette.Foreground.copy(alpha = 0.24f),
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .padding(AppSpacingTokens.Small)
                 ) {
                     AppText(

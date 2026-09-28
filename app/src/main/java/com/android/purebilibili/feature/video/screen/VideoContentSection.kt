@@ -410,6 +410,7 @@ internal fun resolveVideoContentTabBarCollapsePxWhenListLeavesTop(
  * 从 VideoDetailScreen.kt 提取出来，提高代码可维护性
  */
 internal class VideoContentData(
+    val sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     val info: ViewInfo,
     val introListState: LazyListState,
     val commentListState: LazyListState,
@@ -901,6 +902,7 @@ internal fun VideoContentSection(
             ) { page ->
                 when (page) {
                     0 -> VideoIntroTab(
+                        sponsorVideoNotice = data.sponsorVideoNotice,
                         listState = introListState,
                         modifier = Modifier,
                         info = info,
@@ -1229,6 +1231,7 @@ internal fun VideoContentSection(
 // ... VideoIntroTab signature ...
 @Composable
 private fun VideoIntroTab(
+    sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     listState: LazyListState,
     modifier: Modifier,
     info: ViewInfo,
@@ -1299,6 +1302,7 @@ private fun VideoIntroTab(
         // 1. 移入的 Header 区域
         item {
             VideoHeaderContent(
+                sponsorVideoNotice = sponsorVideoNotice,
                 info = info,
                 videoTags = videoTags,
                 currentPageIndex = currentPageIndex,
@@ -1769,6 +1773,7 @@ internal fun LandscapeCommentPanel(
 
 @Composable
 private fun VideoHeaderContent(
+    sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     info: ViewInfo,
     videoTags: List<VideoTag>,
     currentPageIndex: Int,
@@ -1860,6 +1865,7 @@ private fun VideoHeaderContent(
         )
 
         VideoTitleWithDesc(
+            sponsorVideoNotice = sponsorVideoNotice,
             info = info,
             videoTags = videoTags,
             transitionEnabled = transitionEnabled,  // 🔗 传递共享元素开关

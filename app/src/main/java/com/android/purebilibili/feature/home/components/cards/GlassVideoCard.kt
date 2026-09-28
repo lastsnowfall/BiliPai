@@ -385,6 +385,7 @@ fun GlassVideoCard(
                                 .fillMaxSize()
                                 .then(nativeCardSnapshot.coverOverlayModifier),
                         ) {
+                        com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(video.bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
                         //  底部渐变遮罩
                         Box(
                             modifier = Modifier

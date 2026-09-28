@@ -453,7 +453,7 @@ private fun resolveSponsorProgressMarkerColor(category: String, colorHex: String
         runCatching { return Color(android.graphics.Color.parseColor(hex)) }
     }
     return if (category == SponsorCategory.SPONSOR) {
-        Color(0xFFFF8A65)
+        Color(0xFF00D400)
     } else {
         Color(0xFFFDE68A).copy(alpha = 0.72f)
     }

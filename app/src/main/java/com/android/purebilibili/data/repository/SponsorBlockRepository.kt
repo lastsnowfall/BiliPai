@@ -4,6 +4,7 @@ package com.android.purebilibili.data.repository
 import com.android.purebilibili.core.network.NetworkModule
 import com.android.purebilibili.data.model.response.SponsorCategory
 import com.android.purebilibili.data.model.response.SponsorSegment
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -132,25 +133,18 @@ object SponsorBlockRepository {
                 .get()
                 .build()
             
-            val response = client.newCall(request).execute()
-            
-            when (response.code) {
-                200 -> {
-                    val body = response.body.string()
-                    val segments = json.decodeFromString<List<SponsorSegment>>(body)
-                    android.util.Log.d(TAG, "获取到 ${segments.size} 个空降片段 for $bvid")
-                    segments
-                }
-                404 -> {
-                    // 没有空降数据，这是正常情况
-                    android.util.Log.d(TAG, "视频 $bvid 没有空降数据")
-                    emptyList()
-                }
-                else -> {
-                    android.util.Log.w(TAG, "API 返回错误: ${response.code}")
-                    emptyList()
+            client.newCall(request).execute().use { response ->
+                when (response.code) {
+                    200 -> json.decodeFromString<List<SponsorSegment>>(response.body.string())
+                    404 -> emptyList() // No community data does not imply an ad-free video.
+                    else -> {
+                        android.util.Log.w(TAG, "API returned HTTP ${response.code}")
+                        emptyList()
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e(TAG, "获取空降片段失败: ${e.message}")
             emptyList()

@@ -1413,6 +1413,7 @@ fun VideoPlayerOverlay(
             PersistentBottomProgressBar(
                 current = displayedProgressState.current,
                 duration = displayedProgressState.duration,
+                sponsorMarkers = sponsorMarkers,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(end = endDrawerReservedWidth)

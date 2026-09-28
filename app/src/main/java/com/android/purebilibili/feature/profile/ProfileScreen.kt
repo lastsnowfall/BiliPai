@@ -2534,6 +2534,7 @@ private fun ProfileVideoList(
                                     )
                                 } else {
                                     PersonalMediaCardFrame(
+        bvid = video.bvid,
                                         stacked = true,
                                         headlineContent = {
                                             AppText(video.title, maxLines = 2, overflow = TextOverflow.Ellipsis)

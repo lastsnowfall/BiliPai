@@ -18,6 +18,10 @@ import com.android.purebilibili.core.plugin.RecommendationStrategy
 import com.android.purebilibili.feature.plugin.ADFILTER_PLUGIN_ID
 import com.android.purebilibili.feature.plugin.BILIPAI_FEED_FILTER_PLUGIN_ID
 import com.android.purebilibili.core.store.SettingsManager
+import com.android.purebilibili.core.store.mixPriorityCreatorVideos
+import com.android.purebilibili.feature.priority.PriorityCreatorStore
+import com.android.purebilibili.feature.priority.PriorityCreatorRepository
+import com.android.purebilibili.feature.priority.PriorityCreatorNotifications
 import com.android.purebilibili.core.store.TodayWatchDislikedVideoSnapshot
 import com.android.purebilibili.core.store.TodayWatchFeedbackStore
 import com.android.purebilibili.core.store.TodayWatchProfileStore
@@ -1429,6 +1433,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             currentRefreshIndex = refreshIdx
         )
 
+        if (currentCategory == HomeCategory.RECOMMEND && !isLoadMore) {
+            viewModelScope.launch {
+                PriorityCreatorRepository.refresh(getApplication())
+                PriorityCreatorNotifications.postPending(getApplication())
+            }
+        }
+
         //  视频类分类处理
         val videoResult = when (currentCategory) {
             HomeCategory.RECOMMEND -> VideoRepository.getHomeVideos(recommendRequestIndex) // Recommend uses idx, slightly different
@@ -1462,14 +1473,46 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         // Feed filtering and de-duplication are CPU-only work. Keep it off the UI dispatcher so
         // the list can continue drawing while plugin and feedback rules process the response.
+        val priorityState = if (currentCategory == HomeCategory.RECOMMEND) {
+            PriorityCreatorStore.read(getApplication())
+        } else null
+        val watchedIds = if (currentCategory == HomeCategory.RECOMMEND) {
+            com.android.purebilibili.feature.priority.WatchedVideoStore.read(getApplication())
+        } else emptySet()
+        val useFixedPrioritySlots = priorityState?.creators?.isNotEmpty() == true
         val preparedHomeFeed = videoResult.getOrNull()?.let { videos ->
             withContext(Dispatchers.Default) {
-                prepareHomeFeedVideos(
-                    videos = videos,
+                val prepared = prepareHomeFeedVideos(
+                    videos = videos.filterNot { it.bvid in watchedIds },
                     blockedMids = blockedMids,
                     feedKind = currentCategory.toFeedKind(popularSubCategory),
                     feedbackFilter = ::filterHomeFeedbackVideos,
                 )
+                if (priorityState == null || priorityState.creators.isEmpty()) {
+                    prepared
+                } else {
+                    val candidates = prepareHomeFeedVideos(
+                        videos = priorityState.videos.filterNot { it.bvid in watchedIds }.sortedByDescending { it.pubdate },
+                        blockedMids = blockedMids,
+                        feedKind = currentCategory.toFeedKind(popularSubCategory),
+                        feedbackFilter = ::filterHomeFeedbackVideos,
+                    ).filteredVideos
+                    // Remove items already visible before allocating slots, so duplicate cached
+                    // videos cannot consume the selected creators' share on later pages.
+                    val existingIds = if (isLoadMore) {
+                        currentCategoryState.videos.map { it.bvid }.toSet()
+                    } else emptySet()
+                    prepared.copy(filteredVideos = mixPriorityCreatorVideos(
+                        recommended = prepared.filteredVideos.filterNot { it.bvid in existingIds },
+                        creatorVideos = candidates.filterNot { it.bvid in existingIds },
+                        selectedMids = priorityState.creators.map { it.mid }.toSet(),
+                        startIndex = if (isLoadMore) currentCategoryState.videos.size else 0,
+                        markPriority = { it.copy(isPriorityRecommendation = true) },
+                        limit = prepared.validVideoCount,
+                        key = { it.bvid },
+                        owner = { it.owner.mid },
+                    ))
+                }
             }
         }
 
@@ -1491,7 +1534,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             
             val useIncrementalRecommendRefresh = !isLoadMore &&
                 currentCategory == HomeCategory.RECOMMEND &&
-                incrementalTimelineRefreshEnabled
+                incrementalTimelineRefreshEnabled && !useFixedPrioritySlots && watchedIds.isEmpty()
 
             val incomingVideos = selectHomeFeedIncomingVideos(
                 responseVideos = filteredVideos,
@@ -1551,6 +1594,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                  val updateContent: (CategoryContent) -> CategoryContent = { oldState ->
                     oldState.copy(
                         isLoading = false,
+                        videos = if (!isLoadMore && currentCategory == HomeCategory.RECOMMEND) emptyList<VideoItem>().toImmutableList() else oldState.videos,
                         error = if (!isLoadMore && oldState.videos.isEmpty()) "没有更多内容了" else null,
                         hasMore = false,
                         pageIndex = resolvePagedFeedPageIndexAfterFetch(

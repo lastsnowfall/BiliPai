@@ -256,33 +256,6 @@ internal fun reduceSponsorSkipUiState(
     }
 }
 
-internal fun shouldResumePlaybackAfterSponsorBlockSkip(
-    playWhenReadyBeforeSkip: Boolean
-): Boolean {
-    // 空降助手跳过是用户启用的连续播放能力；跳过后保持暂停会让每个片段都需要再点一次播放。
-    return true
-}
-
-private const val SPONSOR_SKIP_END_GUARD_MS = 1_000L
-
-internal fun resolveSponsorBlockSkipTargetPositionMs(
-    requestedPositionMs: Long,
-    durationMs: Long,
-    category: String?,
-): Long {
-    val safeRequestedPositionMs = requestedPositionMs.coerceAtLeast(0L)
-    if (durationMs <= 0L) return safeRequestedPositionMs
-
-    // 片尾跳过允许自然进入播放完成；其他社区片段不能因时间轴误差 seek 到
-    // duration 或其后，否则部分 Media3/解码器组合会直接进入 STATE_ENDED。
-    if (category == com.android.purebilibili.data.model.response.SponsorCategory.OUTRO) {
-        return safeRequestedPositionMs.coerceAtMost(durationMs)
-    }
-    val latestContinuousPlaybackPositionMs =
-        (durationMs - SPONSOR_SKIP_END_GUARD_MS).coerceAtLeast(0L)
-    return safeRequestedPositionMs.coerceAtMost(latestContinuousPlaybackPositionMs)
-}
-
 internal fun buildSponsorBlockVideoSnapshot(currentState: VideoPlaybackUiState): SponsorBlockVideoSnapshot? {
     val success = currentState as? VideoPlaybackUiState.Success ?: return null
     val info = success.info
@@ -624,7 +597,8 @@ sealed class VideoPlaybackUiState {
         val subtitlePrimaryCues: List<SubtitleCue> = emptyList(),
         val subtitleSecondaryCues: List<SubtitleCue> = emptyList(),
         val ownerFollowerCount: Int? = null,
-        val ownerVideoCount: Int? = null
+        val ownerVideoCount: Int? = null,
+        val sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     ) : VideoPlaybackUiState() {
         val cdnCount: Int get() = allVideoUrls.size.coerceAtLeast(1)
         val currentCdnLabel: String get() = "线路${currentCdnIndex + 1}"
@@ -1354,6 +1328,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
 
     //  插件系统（替代旧的SponsorBlockUseCase）
     private var pluginCheckJob: Job? = null
+    private var pluginLoadJob: Job? = null
     private var playbackCdnFallbackJob: Job? = null
     private var playbackCdnPrefetchJob: Job? = null
     private var playbackCdnFallbackState: PlaybackCdnFallbackState = PlaybackCdnFallbackState.Inactive
@@ -2257,6 +2232,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 cancelPlaybackStallRecovery()
             }
             if (playbackState == Player.STATE_ENDED) {
+                recordNearlyFinishedRecommendation()
                 if (shouldSuppressPlaybackCompletionForCommentInteraction(isCommentInteractionActive)) {
                     _showPlaybackEndedDialog.value = false
                     Logger.d("PlayerVM", "评论交互进行中，保持当前视频结束态")
@@ -2333,6 +2309,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         }
         
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!isPlaying) recordNearlyFinishedRecommendation(includePaused = true)
             syncHeartbeatPlaybackTracking(
                 isActivelyPlaying = isPlaying && !BackgroundManager.isInBackground
             )
@@ -2996,6 +2973,11 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
         )
         playbackCoordinator.dismissResumeSuggestion()
         bootstrapContextIfNeeded()
+        appContext?.let { context ->
+            viewModelScope.launch {
+                com.android.purebilibili.feature.priority.PriorityCreatorStore.markRead(context, bvid)
+            }
+        }
         aiSummaryJob?.cancel()
         videoNoteJob?.cancel()
         Logger.d(
@@ -7414,6 +7396,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         )
                         val switchedState = subtitleClearedState.copy(
                             info = current.info.copy(cid = page.cid), playUrl = cdnSelection.playUrl, audioUrl = cdnSelection.audioUrl,
+                            sponsorVideoNotice = null,
                             startPosition = restoredPosition, isQualitySwitching = false,
                             pendingPlaybackTransitionPositionMs = restoredPosition.coerceAtLeast(0L),
                             currentQuality = selection.actualQuality,
@@ -7443,6 +7426,8 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         onPageIdentityCommitted?.invoke(targetBvid, page.cid)
                         currentCid = page.cid
                         _uiState.value = switchedState
+                        loadPlayerPlugins(targetBvid, page.cid)
+                        startPluginCheck()
                         playResolvedPlayback(
                             videoUrl = cdnSelection.playUrl,
                             audioUrl = cdnSelection.audioUrl,
@@ -7735,20 +7720,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                             )
                             PlaybackPostLoadTask.HEARTBEAT -> startHeartbeat()
                             PlaybackPostLoadTask.PLUGIN_ON_VIDEO_LOAD -> {
-                                _sponsorProgressMarkers.value = emptyList()
-                                sponsorContributionRequest = null
-                                _sponsorContributionUiState.value = SponsorContributionUiState()
-                                PluginManager.getEnabledPlayerPlugins().forEach { plugin ->
-                                    try {
-                                        plugin.onVideoLoad(loadedBvid, loadedCid)
-                                        if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
-                                            _sponsorProgressMarkers.value = plugin.getProgressMarkers()
-                                        }
-                                    } catch (e: Exception) {
-                                        Logger.e("PlayerVM", "Plugin ${plugin.name} onVideoLoad failed", e)
-                                    }
-                                }
-                                refreshSponsorContributionAvailability()
+                                loadPlayerPlugins(loadedBvid, loadedCid)
                             }
                             PlaybackPostLoadTask.START_PLUGIN_CHECK -> startPluginCheck()
                         }
@@ -7757,9 +7729,65 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             }
     }
 
-    /**
-     * 定期检查插件（约500ms一次）
-     */
+    /** Reset and load plugin data for a committed BV/CID without blocking playback. */
+    private fun loadPlayerPlugins(bvid: String, cid: Long) {
+        val current = _uiState.value as? VideoPlaybackUiState.Success ?: return
+        if (current.info.bvid != bvid || current.info.cid != cid) return
+        pluginLoadJob?.cancel()
+        clearSponsorSkipUi()
+        _sponsorProgressMarkers.value = emptyList()
+        sponsorMutedOriginalVolume?.let { exoPlayer?.volume = it }
+        sponsorMutedOriginalVolume = null
+        sponsorMuteRestoreAtMs = null
+        sponsorContributionRequest = null
+        _sponsorContributionUiState.value = SponsorContributionUiState()
+        _uiState.update { state ->
+            if (state is VideoPlaybackUiState.Success) state.copy(sponsorVideoNotice = null) else state
+        }
+        val plugins = PluginManager.getEnabledPlayerPlugins()
+        plugins.filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>()
+            .forEach { it.onVideoEnd() }
+        pluginLoadJob = viewModelScope.launch {
+            plugins.forEach { plugin ->
+                try {
+                    plugin.onVideoLoad(bvid, cid)
+                    val current = _uiState.value as? VideoPlaybackUiState.Success ?: return@launch
+                    if (current.info.bvid != bvid || current.info.cid != cid) return@launch
+                    if (plugin !in PluginManager.getEnabledPlayerPlugins()) return@forEach
+                    if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin &&
+                        plugin.isLoadedFor(bvid, cid)
+                    ) {
+                        _sponsorProgressMarkers.value = plugin.getProgressMarkers()
+                        _uiState.update { state ->
+                            if (state is VideoPlaybackUiState.Success && state.info.bvid == bvid && state.info.cid == cid)
+                                state.copy(sponsorVideoNotice = plugin.getVideoNotice()) else state
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e("PlayerVM", "Plugin ${plugin.name} onVideoLoad failed", e)
+                }
+            }
+            refreshSponsorContributionAvailability()
+        }
+    }
+
+    private val recordedFinishedRecommendations = mutableSetOf<String>()
+
+    private fun recordNearlyFinishedRecommendation(includePaused: Boolean = false) {
+        val current = _uiState.value as? VideoPlaybackUiState.Success ?: return
+        val player = exoPlayer ?: return
+        if (!hasUserStartedPlayback || (!includePaused && !player.isPlaying && player.playbackState != Player.STATE_ENDED)) return
+        if (current.info.cid != currentCid || current.info.bvid.isBlank()) return
+        // A completed first part does not mean a multipart upload is finished.
+        if (current.info.pages.size > 1 && current.info.pages.last().cid != current.info.cid) return
+        if (com.android.purebilibili.core.store.isNearlyFinishedVideo(player.currentPosition, player.duration) &&
+            recordedFinishedRecommendations.add(current.info.bvid)) {
+            com.android.purebilibili.feature.priority.WatchedVideoStore.markFinished(getApplication(), current.info.bvid)
+        }
+    }
+
     private fun startPluginCheck() {
         pluginCheckJob?.cancel()
         lastPluginDispatchPositionMs = null
@@ -7768,17 +7796,32 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                 val plugins = PluginManager.getEnabledPlayerPlugins()
                 refreshSponsorContributionAvailability(plugins)
                 if (plugins.none { it is com.android.purebilibili.feature.plugin.SponsorBlockPlugin } &&
-                    _sponsorProgressMarkers.value.isNotEmpty()
+                    (_sponsorProgressMarkers.value.isNotEmpty() ||
+                        (_uiState.value as? VideoPlaybackUiState.Success)?.sponsorVideoNotice != null ||
+                        sponsorMuteRestoreAtMs != null)
                 ) {
                     _sponsorProgressMarkers.value = emptyList()
+                    _uiState.update { state ->
+                        if (state is VideoPlaybackUiState.Success) state.copy(sponsorVideoNotice = null) else state
+                    }
                     clearSponsorSkipUi()
+                    sponsorMutedOriginalVolume?.let { exoPlayer?.volume = it }
+                    sponsorMutedOriginalVolume = null
+                    sponsorMuteRestoreAtMs = null
                 }
                 val intervalMs = resolvePluginPollingIntervalMs(
                     hasPlugins = plugins.isNotEmpty(),
                     isPlaying = exoPlayer?.isPlaying == true
                 )
                 delay(intervalMs)
+                recordNearlyFinishedRecommendation()
                 if (plugins.isEmpty()) continue
+                val current = _uiState.value as? VideoPlaybackUiState.Success ?: continue
+                val sponsorPlugin = plugins.filterIsInstance<com.android.purebilibili.feature.plugin.SponsorBlockPlugin>().firstOrNull()
+                if (sponsorPlugin != null && !sponsorPlugin.isLoadedFor(current.info.bvid, current.info.cid)) {
+                    if (pluginLoadJob?.isActive != true) loadPlayerPlugins(current.info.bvid, current.info.cid)
+                    continue
+                }
 
                 val currentPos = playbackUseCase.getCurrentPosition()
                 val restoreAt = sponsorMuteRestoreAtMs
@@ -7849,7 +7892,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                                     exoPlayer?.volume = 0f
                                     if (action.showToast) toast(action.reason)
                                 }
-                                sponsorMuteRestoreAtMs = action.untilMs
+                                sponsorMuteRestoreAtMs = maxOf(sponsorMuteRestoreAtMs ?: 0L, action.untilMs)
                             }
                             SkipAction.None -> {
                                 clearSponsorSkipUi()
@@ -7954,6 +7997,9 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun notifyPluginsOfExplicitSeek(positionMs: Long) {
+        sponsorMutedOriginalVolume?.let { exoPlayer?.volume = it }
+        sponsorMutedOriginalVolume = null
+        sponsorMuteRestoreAtMs = null
         PluginManager.getEnabledPlayerPlugins().forEach { plugin ->
             plugin.onUserSeek(positionMs)
             if (plugin is com.android.purebilibili.feature.plugin.SponsorBlockPlugin) {
@@ -8708,11 +8754,13 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
     
     override fun onCleared() {
+        recordNearlyFinishedRecommendation(includePaused = true)
         super.onCleared()
         onPageIdentityCommitted = null
         recordCreatorWatchProgressSnapshot()
         heartbeatJob?.cancel()
         clearHeartbeatSession()
+        pluginLoadJob?.cancel()
         pluginCheckJob?.cancel()
         playbackCdnFallbackJob?.cancel()
         onlineCountJob?.cancel()  // 👀 取消在线人数轮询

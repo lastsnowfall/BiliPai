@@ -333,6 +333,7 @@ fun CinematicVideoCard(
                     .fillMaxSize()
                     .then(nativeCardSnapshot.coverOverlayModifier),
             ) {
+                        com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(video.bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
             // 2. 渐变遮罩
             Box(
                 modifier = Modifier

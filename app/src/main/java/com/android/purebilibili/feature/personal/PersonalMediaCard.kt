@@ -63,6 +63,7 @@ internal fun PersonalMediaCardFrame(
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     nativeSnapshotModifier: Modifier = Modifier,
+    bvid: String = "",
 ) {
     val fontScale = LocalDensity.current.fontScale
     val minimumHeight = resolvePersonalMediaCardMinHeightDp(fontScale).dp
@@ -91,6 +92,7 @@ internal fun PersonalMediaCardFrame(
                         coverContent()
                         Box(modifier = Modifier.fillMaxSize().then(coverOverlayModifier)) {
                             coverOverlayContent?.invoke(this)
+                            com.android.purebilibili.feature.plugin.SponsorThumbnailBadge(bvid, Modifier.align(Alignment.TopEnd).padding(6.dp))
                         }
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
@@ -109,6 +111,7 @@ internal fun PersonalMediaCardFrame(
                 }
             } else {
                 HorizontalVideoCardFrame(
+                    bvid = bvid,
                     coverContent = coverContent,
                     coverModifier = coverModifier,
                     coverOverlayModifier = coverOverlayModifier,

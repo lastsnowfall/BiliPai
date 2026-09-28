@@ -313,6 +313,7 @@ fun VideoTitleSection(
 @Composable
 fun VideoTitleWithDesc(
     info: ViewInfo,
+    sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     videoTags: List<VideoTag> = emptyList(),  //  视频标签
     bgmList: List<BgmInfo> = emptyList(),
     onlineCount: String = "",
@@ -398,6 +399,10 @@ fun VideoTitleWithDesc(
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = horizontalPadding, vertical = if (isMaterial3) 8.dp else 6.dp)
     ) {
+        sponsorVideoNotice?.let { notice ->
+            com.android.purebilibili.feature.video.ui.components.SponsorVideoNoticeBanner(notice)
+            Spacer(modifier = Modifier.height(6.dp))
+        }
         // Title row (expandable)
         Row(
             modifier = Modifier

@@ -56,6 +56,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -286,6 +287,7 @@ fun SpaceScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var showBlockConfirmDialog by remember { mutableStateOf(false) }
+    var showPriorityCreatorDialog by remember(mid) { mutableStateOf(false) }
     var showTopPhotoPreview by remember(mid) { mutableStateOf(false) }
     var showAvatarPreview by remember(mid) { mutableStateOf(false) }
     var repostDynamicId by remember { mutableStateOf<String?>(null) }
@@ -321,6 +323,14 @@ fun SpaceScreen(
     }
 
     val currentSuccessState = uiState as? SpaceUiState.Success
+    if (showPriorityCreatorDialog && currentSuccessState != null) {
+        com.android.purebilibili.feature.priority.PriorityCreatorDialog(
+            mid = mid,
+            name = currentSuccessState.userInfo.name,
+            face = currentSuccessState.userInfo.face,
+            onDismiss = { showPriorityCreatorDialog = false },
+        )
+    }
     var contributionVideoLayoutMode by rememberSaveable(mid) {
         mutableStateOf(defaultSpaceContributionVideoLayoutMode())
     }
@@ -523,6 +533,13 @@ fun SpaceScreen(
                                             ),
                                         )
                                     )
+                                }
+                                if (currentSuccessState != null && mid > 0) {
+                                    add(listOf(AppWindowAction(
+                                        label = "重点关注",
+                                        icon = Icons.Outlined.Notifications,
+                                        onClick = { showPriorityCreatorDialog = true },
+                                    )))
                                 }
                                 if (queryAicu != null && mid > 0) {
                                     add(listOf(AppWindowAction(
@@ -3737,6 +3754,7 @@ private fun SpaceTopVideoCard(
         )
         Spacer(modifier = Modifier.height(12.dp))
         HorizontalVideoCardFrame(
+            bvid = video.bvid,
             coverModifier = coverModifier
                     .onGloballyPositioned { coordinates ->
                         coverBounds = coordinates.boundsInRoot()
@@ -3958,6 +3976,7 @@ private fun SpaceArchiveListItemRow(
     )
 
     HorizontalVideoCardFrame(
+        bvid = sharedTransitionKey.orEmpty(),
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)

@@ -987,6 +987,7 @@ private fun CinemaVideoIntroSection(
             )
         ) {
             VideoTitleWithDesc(
+                sponsorVideoNotice = success.sponsorVideoNotice,
                 info = success.info,
                 videoTags = success.videoTags,
                 onDescriptionUrlClick = onOpenBilibiliLink,

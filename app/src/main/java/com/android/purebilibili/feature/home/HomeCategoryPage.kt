@@ -282,7 +282,7 @@ internal fun HomeCategoryPageContent(
         }
     }
     val showHeroCarousel = shouldShowHomeHeroCarousel(
-        enabled = homeHeroCarouselEnabled,
+        enabled = homeHeroCarouselEnabled && categoryState.videos.none { it.isPriorityRecommendation },
         category = category,
         itemCount = carouselVideos.size
     )
@@ -319,99 +319,111 @@ internal fun HomeCategoryPageContent(
                 )
                 .then(if (index == 0) firstGridItemModifier else Modifier)
         ) {
-            when (displayMode) {
-                1 -> StoryVideoCard(
-                    video = video,
-                    index = index,
-                    animationEnabled = cardAnimationEnabled,
-                    motionTier = cardMotionTier,
-                    transitionEnabled = cardTransitionEnabled,
-                    isReturningFromVideoDetail = isReturningFromVideoDetail,
-                    isQuickReturningFromVideoDetail = isQuickReturningFromVideoDetail,
-                    scrollLiteModeEnabled = false,
-                    isDataSaverActive = isDataSaverActive,
-                    preferLowQualityCover = preferLowQualityCover,
-                    coverRequestSpec = coverRequestSpec,
-                    showCoverGlassBadges = showCoverGlassBadges,
-                    showInfoGlassBadges = showInfoGlassBadges,
-                    showUpBadge = showUpBadges,
-                    showUpAvatar = showUpAvatars,
-                    homeDurationStyle = homeDurationStyle,
-                    coverAspectRatio = cardLayout.coverAspectRatio,
-                    cardHorizontalPadding = cardLayout.storyCardHorizontalPaddingDp.dp,
-                    compactMetadata = cardLayout.compactMetadata,
-                    titleMinLines = cardLayout.titleMinLines,
-                    titleMaxLines = cardLayout.titleMaxLines,
-                    showOnlineCount = showOnlineCount,
-                    onUpClick = onUpClick,
-                    showPublishTime = showPublishTime,
-                    onDismiss = { onDismissVideo(video) },
-                    onLongClick = if (isDynamicDetailCard) null else longPressCallback?.let { cb -> { cb(video) } },
-                    onClick = { bvid, cid ->
-                        onVideoClick(
-                            HomeVideoClickRequest(
-                                bvid = bvid,
-                                dynamicId = video.dynamicId,
-                                cid = cid,
-                                coverUrl = video.pic,
-                                isVerticalVideo = video.isVertical,
-                                source = HomeVideoClickSource.GRID,
-                                sourceRoute = sourceRoute
-                            )
-                        )
-                    }
+            androidx.compose.foundation.layout.Column(
+                modifier = if (video.isPriorityRecommendation) Modifier
+                    .background(MaterialTheme.colorScheme.tertiaryContainer, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .padding(2.dp) else Modifier
+            ) {
+                if (video.isPriorityRecommendation) com.android.purebilibili.core.ui.components.AppText(
+                    text = "✓ 喜欢的 UP",
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
+                when (displayMode) {
+                    1 -> StoryVideoCard(
+                        video = video,
+                        index = index,
+                        animationEnabled = cardAnimationEnabled,
+                        motionTier = cardMotionTier,
+                        transitionEnabled = cardTransitionEnabled,
+                        isReturningFromVideoDetail = isReturningFromVideoDetail,
+                        isQuickReturningFromVideoDetail = isQuickReturningFromVideoDetail,
+                        scrollLiteModeEnabled = false,
+                        isDataSaverActive = isDataSaverActive,
+                        preferLowQualityCover = preferLowQualityCover,
+                        coverRequestSpec = coverRequestSpec,
+                        showCoverGlassBadges = showCoverGlassBadges,
+                        showInfoGlassBadges = showInfoGlassBadges,
+                        showUpBadge = showUpBadges,
+                        showUpAvatar = showUpAvatars,
+                        homeDurationStyle = homeDurationStyle,
+                        coverAspectRatio = cardLayout.coverAspectRatio,
+                        cardHorizontalPadding = cardLayout.storyCardHorizontalPaddingDp.dp,
+                        compactMetadata = cardLayout.compactMetadata,
+                        titleMinLines = cardLayout.titleMinLines,
+                        titleMaxLines = cardLayout.titleMaxLines,
+                        showOnlineCount = showOnlineCount,
+                        onUpClick = onUpClick,
+                        showPublishTime = showPublishTime,
+                        onDismiss = { onDismissVideo(video) },
+                        onLongClick = if (isDynamicDetailCard) null else longPressCallback?.let { cb -> { cb(video) } },
+                        onClick = { bvid, cid ->
+                            onVideoClick(
+                                HomeVideoClickRequest(
+                                    bvid = bvid,
+                                    dynamicId = video.dynamicId,
+                                    cid = cid,
+                                    coverUrl = video.pic,
+                                    isVerticalVideo = video.isVertical,
+                                    source = HomeVideoClickSource.GRID,
+                                    sourceRoute = sourceRoute
+                                )
+                            )
+                        }
+                    )
 
-                else -> ElegantVideoCard(
-                    video = video,
-                    index = index,
-                    isFollowing = video.owner.mid in followingMids && category != HomeCategory.FOLLOW,
-                    animationEnabled = cardAnimationEnabled,
-                    motionTier = cardMotionTier,
-                    transitionEnabled = cardTransitionEnabled,
-                    isReturningFromVideoDetail = isReturningFromVideoDetail,
-                    isQuickReturningFromVideoDetail = isQuickReturningFromVideoDetail,
-                    scrollLiteModeEnabled = false,
-                    cardWidthDp = estimatedCardWidthDp,
-                    showPublishTime = showPublishTime,
-                    isDataSaverActive = isDataSaverActive,
-                    preferLowQualityCover = preferLowQualityCover,
-                    coverRequestSpec = coverRequestSpec,
-                    compactStatsOnCover = compactStatsOnCover || cardLayout.compactStatsOnCover,
-                    showCoverGlassBadges = showCoverGlassBadges,
-                    showInfoGlassBadges = showInfoGlassBadges,
-                    badgeEffectMode = badgeEffectMode,
-                    infoGlassMode = infoGlassMode,
-                    wallpaperTintEnabled = wallpaperTintEnabled,
-                    wallpaperEffectMode = wallpaperEffectMode,
-                    showUpBadge = showUpBadges,
-                    showUpAvatar = showUpAvatars,
-                    homeDurationStyle = homeDurationStyle,
-                    coverAspectRatio = cardLayout.coverAspectRatio,
-                    compactMetadata = cardLayout.compactMetadata,
-                    titleMinLines = cardLayout.titleMinLines,
-                    titleMaxLines = cardLayout.titleMaxLines,
-                    showOnlineCount = showOnlineCount,
-                    onUpClick = onUpClick,
-                    onDismiss = { onDismissVideo(video) },
-                    onWatchLater = if (isDynamicDetailCard) null else ({
-                        onWatchLater(video.bvid, resolveWatchLaterAid(video))
-                    }),
-                    onLongClick = if (isDynamicDetailCard) null else longPressCallback?.let { cb -> { cb(video) } },
-                    onClick = { bvid, cid ->
-                        onVideoClick(
-                            HomeVideoClickRequest(
-                                bvid = bvid,
-                                dynamicId = video.dynamicId,
-                                cid = cid,
-                                coverUrl = video.pic,
-                                isVerticalVideo = video.isVertical,
-                                source = HomeVideoClickSource.GRID,
-                                sourceRoute = sourceRoute
+                    else -> ElegantVideoCard(
+                        video = video,
+                        index = index,
+                        isFollowing = video.owner.mid in followingMids && category != HomeCategory.FOLLOW,
+                        animationEnabled = cardAnimationEnabled,
+                        motionTier = cardMotionTier,
+                        transitionEnabled = cardTransitionEnabled,
+                        isReturningFromVideoDetail = isReturningFromVideoDetail,
+                        isQuickReturningFromVideoDetail = isQuickReturningFromVideoDetail,
+                        scrollLiteModeEnabled = false,
+                        cardWidthDp = estimatedCardWidthDp,
+                        showPublishTime = showPublishTime,
+                        isDataSaverActive = isDataSaverActive,
+                        preferLowQualityCover = preferLowQualityCover,
+                        coverRequestSpec = coverRequestSpec,
+                        compactStatsOnCover = compactStatsOnCover || cardLayout.compactStatsOnCover,
+                        showCoverGlassBadges = showCoverGlassBadges,
+                        showInfoGlassBadges = showInfoGlassBadges,
+                        badgeEffectMode = badgeEffectMode,
+                        infoGlassMode = infoGlassMode,
+                        wallpaperTintEnabled = wallpaperTintEnabled,
+                        wallpaperEffectMode = wallpaperEffectMode,
+                        showUpBadge = showUpBadges,
+                        showUpAvatar = showUpAvatars,
+                        homeDurationStyle = homeDurationStyle,
+                        coverAspectRatio = cardLayout.coverAspectRatio,
+                        compactMetadata = cardLayout.compactMetadata,
+                        titleMinLines = cardLayout.titleMinLines,
+                        titleMaxLines = cardLayout.titleMaxLines,
+                        showOnlineCount = showOnlineCount,
+                        onUpClick = onUpClick,
+                        onDismiss = { onDismissVideo(video) },
+                        onWatchLater = if (isDynamicDetailCard) null else ({
+                            onWatchLater(video.bvid, resolveWatchLaterAid(video))
+                        }),
+                        onLongClick = if (isDynamicDetailCard) null else longPressCallback?.let { cb -> { cb(video) } },
+                        onClick = { bvid, cid ->
+                            onVideoClick(
+                                HomeVideoClickRequest(
+                                    bvid = bvid,
+                                    dynamicId = video.dynamicId,
+                                    cid = cid,
+                                    coverUrl = video.pic,
+                                    isVerticalVideo = video.isVertical,
+                                    source = HomeVideoClickSource.GRID,
+                                    sourceRoute = sourceRoute
+                                )
                             )
-                        )
-                    }
-                )
+                        }
+                    )
+                }
             }
         }
     }
@@ -461,6 +473,18 @@ internal fun HomeCategoryPageContent(
         } else {
             // Video Category Content
             if (category == HomeCategory.RECOMMEND) {
+                item(key = "priority_creator_updates", span = StaggeredGridItemSpan.FullLine) {
+                    com.android.purebilibili.feature.priority.PriorityCreatorHomeCard { video ->
+                        onVideoClick(HomeVideoClickRequest(
+                            bvid = video.bvid,
+                            cid = video.cid,
+                            coverUrl = video.pic,
+                            isVerticalVideo = video.isVertical,
+                            source = HomeVideoClickSource.GRID,
+                            sourceRoute = sourceRoute,
+                        ))
+                    }
+                }
                 if (showHeroCarousel) {
                     item(
                         key = "home_hero_carousel",

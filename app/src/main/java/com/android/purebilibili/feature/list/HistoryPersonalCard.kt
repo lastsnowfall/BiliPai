@@ -325,6 +325,7 @@ internal fun HistoryPersonalCard(
     }
     if (stacked) {
         PersonalMediaCardFrame(
+        bvid = video.bvid,
             stacked = true,
             selected = selected,
             modifier = modifier
@@ -373,6 +374,7 @@ internal fun HistoryPersonalCard(
     }
 
     HorizontalVideoCardFrame(
+        bvid = video.bvid,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 5.dp)

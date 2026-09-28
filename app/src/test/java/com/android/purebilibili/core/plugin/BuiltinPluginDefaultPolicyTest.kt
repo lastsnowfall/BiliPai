@@ -13,8 +13,12 @@ class BuiltinPluginDefaultPolicyTest {
     }
 
     @Test
+    fun sponsorBlockIsEnabledByDefault() {
+        assertTrue(resolvePluginDefaultEnabled("sponsor_block"))
+    }
+
+    @Test
     fun optionalPluginsStayDisabledByDefault() {
-        assertFalse(resolvePluginDefaultEnabled("sponsor_block"))
         assertFalse(resolvePluginDefaultEnabled("ad_filter"))
         assertFalse(resolvePluginDefaultEnabled("unknown_plugin"))
     }

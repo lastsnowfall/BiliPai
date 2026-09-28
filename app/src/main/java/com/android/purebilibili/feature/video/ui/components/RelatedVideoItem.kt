@@ -316,6 +316,7 @@ fun RelatedVideoItem(
             .clickable(onClick = triggerRelatedVideoClick)
     ) {
         HorizontalVideoCardFrame(
+        bvid = video.bvid,
             coverAspectRatio = coverAspectRatio,
             stacked = stacked,
             coverModifier = Modifier.onGloballyPositioned { coordinates ->

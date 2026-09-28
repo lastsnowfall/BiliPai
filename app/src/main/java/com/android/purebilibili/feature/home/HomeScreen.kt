@@ -2326,7 +2326,7 @@ fun HomeScreen(
                                      () -> Unit
                                  ) -> Unit = { pageCategoryState, contentGridState, selectedPopularSubCategory, onPageLoadMore ->
                                  val pageShowsHeroCarousel = shouldShowHomeHeroCarousel(
-                                     enabled = homeSettings.homeHeroCarouselEnabled,
+                                     enabled = homeSettings.homeHeroCarouselEnabled && pageCategoryState.videos.none { it.isPriorityRecommendation },
                                      category = category,
                                      itemCount = pageCategoryState.videos.size
                                  )

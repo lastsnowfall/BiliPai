@@ -77,26 +77,6 @@ private const val SPONSOR_BLOCK_RECENT_COVER_ASPECT_RATIO = 16f / 10f
 private val PLUGIN_EVENT_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-internal fun normalizeSponsorSegments(
-    segments: List<SponsorSegment>
-): List<SponsorSegment> {
-    return segments
-        .asSequence()
-        .filter { segment -> segment.endTimeMs > segment.startTimeMs }
-        .groupBy { segment -> "${segment.category}:${segment.actionType}" }
-        .values
-        .mapNotNull { candidates ->
-            candidates.maxWithOrNull(
-                compareBy<SponsorSegment> { it.locked }
-                    .thenBy { it.votes }
-                    .thenByDescending { it.startTimeMs }
-                    .thenByDescending { it.endTimeMs }
-            )
-        }
-        .sortedWith(compareBy<SponsorSegment> { it.startTimeMs }.thenBy { it.endTimeMs })
-        .toList()
-}
-
 internal fun resolveSponsorProgressMarkers(
     segments: List<SponsorSegment>,
     markerMode: SponsorBlockMarkerMode,
@@ -117,7 +97,7 @@ internal fun resolveSponsorProgressMarkers(
                 category = segment.category,
                 startTimeMs = segment.startTimeMs,
                 endTimeMs = segment.endTimeMs,
-                colorHex = categoryColors[segment.category],
+                colorHex = categoryColors[segment.category] ?: defaultSponsorBlockCategoryColor(segment.category),
             )
         }
         .toList()
@@ -157,8 +137,8 @@ class SponsorBlockPlugin : PlayerPluginApi {
     
     override val id = SPONSOR_BLOCK_PLUGIN_ID
     override val name = "空降助手"
-    override val description = "自动跳过视频中的广告、赞助、片头片尾等片段"
-    override val version = "1.1.1"
+    override val description = "提示社区标记的商单，并跳过视频中的广告片段"
+    override val version = "1.1.2"
     override val author = "BiliPai项目组"
     override val icon: ImageVector = Icons.Outlined.Send
     override val capabilityManifest: PluginCapabilityManifest = PluginCapabilityManifest(
@@ -176,8 +156,12 @@ class SponsorBlockPlugin : PlayerPluginApi {
     
     // 当前视频的跳过片段
     private var segments: List<SponsorSegment> = emptyList()
+    private var videoNotice: SponsorVideoNotice? = null
+    private val loadSession = SponsorBlockLoadSession()
+
+    fun getVideoNotice(): SponsorVideoNotice? = videoNotice
+    fun isLoadedFor(bvid: String, cid: Long): Boolean = loadSession.isLoadedFor(bvid, cid)
     private var progressMarkers: List<SponsorProgressMarker> = emptyList()
-    private var nextSegmentIndex: Int = 0
     private var activeSegment: SponsorSegment? = null
     
     // 已跳过的片段 UUID（防止重复跳过）
@@ -191,57 +175,63 @@ class SponsorBlockPlugin : PlayerPluginApi {
     }
     
     override suspend fun onDisable() {
+        loadSession.begin()
+        lastAutoSkipTargetMs = null
+        lastAutoSkipTime = 0L
+        videoNotice = null
         segments = emptyList()
         progressMarkers = emptyList()
         skippedIds.clear()
-        nextSegmentIndex = 0
         activeSegment = null
         Logger.d(TAG, "🔴 空降助手已禁用")
     }
     
     override suspend fun onVideoLoad(bvid: String, cid: Long) {
-        // 重置状态
+        val generation = loadSession.begin()
+        lastAutoSkipTargetMs = null
+        videoNotice = null
         segments = emptyList()
         progressMarkers = emptyList()
         skippedIds.clear()
-        nextSegmentIndex = 0
         activeSegment = null
         lastPositionMs = 0
         lastAutoSkipTime = 0
-        
-        //  [修复] 加载配置
         loadConfigSuspend()
-        
-        // 加载片段数据
-        try {
-            segments = normalizeSponsorSegments(
-                SponsorBlockRepository.getSegments(
-                    bvid = bvid,
-                    cid = cid,
-                    categories = config.requestedCategories,
-                    baseUrl = config.serverBaseUrl
-                )
-            ).filter { segment ->
-                config.behaviorFor(segment.category) != SponsorBlockSegmentBehavior.DISABLED &&
-                    segment.duration >= config.minimumSegmentDurationSeconds
-            }
-            progressMarkers = resolveSponsorProgressMarkers(segments, config.markerMode, config.categoryColorHex)
-            Logger.d(
-                TAG,
-                " Loaded ${segments.size} SponsorBlock segments for $bvid, autoSkip=${config.autoSkip}, markers=${progressMarkers.size}"
-            )
-        } catch (e: Exception) {
-            Logger.w(TAG, " 加载片段失败: ${e.message}")
+        if (!loadSession.isCurrent(generation)) return
+        val requestConfig = config
+        // Labels are fetched even when automatic skipping for that category is disabled.
+        val categories = (requestConfig.requestedCategories + listOf(
+            com.android.purebilibili.data.model.response.SponsorCategory.SPONSOR,
+            com.android.purebilibili.data.model.response.SponsorCategory.EXCLUSIVE_ACCESS
+        )).distinct()
+        val loadedSegments = SponsorBlockRepository.getSegments(
+            bvid = bvid,
+            cid = cid,
+            categories = categories,
+            baseUrl = requestConfig.serverBaseUrl
+        )
+        if (!loadSession.isCurrent(generation)) return
+        videoNotice = resolveSponsorVideoNotice(loadedSegments)
+        segments = normalizeSponsorSegments(loadedSegments).filter { segment ->
+            requestConfig.behaviorFor(segment.category) != SponsorBlockSegmentBehavior.DISABLED &&
+                segment.duration >= requestConfig.minimumSegmentDurationSeconds
         }
+        progressMarkers = resolveSponsorProgressMarkers(segments, requestConfig.markerMode, requestConfig.categoryColorHex)
+        loadSession.complete(generation, bvid, cid)
+        Logger.d(TAG, "Loaded ${segments.size} SponsorBlock segments for $bvid/$cid")
     }
-    
+
     // 记录上次播放位置，用于检测回拉
     private var lastPositionMs: Long = 0
     // 记录上次自动跳过的时间，用于防止跳过后的瞬间回拉误判
     private var lastAutoSkipTime: Long = 0
+    private var lastAutoSkipTargetMs: Long? = null
     
     override suspend fun onPositionUpdate(positionMs: Long): SkipAction? {
         if (segments.isEmpty()) return SkipAction.None
+        if (shouldWaitForSponsorSeek(positionMs, lastAutoSkipTargetMs, System.currentTimeMillis() - lastAutoSkipTime)) {
+            return SkipAction.None
+        }
         
         // [修复] 检测用户回拉进度条
         // 增加防抖逻辑：如果是自动跳过后的 3 秒内，不进行回拉检测，且不更新 lastPositionMs（防止被异常值污染）
@@ -257,7 +247,6 @@ class SponsorBlockPlugin : PlayerPluginApi {
                     )
                 skippedIds.clear()
                 skippedIds.addAll(nextSkippedIds)
-                nextSegmentIndex = findCandidateSegmentIndex(positionMs)
             }
             // 只有在非 Grace Period 才更新 lastPositionMs
             // 这样如果出现跳过后的瞬间 0ms/149ms 异常值，会被忽略，保留上次的高位值
@@ -270,34 +259,24 @@ class SponsorBlockPlugin : PlayerPluginApi {
             }
         }
         
-        while (nextSegmentIndex < segments.size) {
-            val candidate = segments[nextSegmentIndex]
-            if (candidate.UUID in skippedIds || positionMs > candidate.endTimeMs) {
-                nextSegmentIndex += 1
-                continue
-            }
-            break
-        }
-
-        val segment = segments.getOrNull(nextSegmentIndex)
-            ?.takeIf { candidate -> positionMs in candidate.startTimeMs..candidate.endTimeMs }
+        val segment = findSponsorSegmentAtPosition(segments, skippedIds, positionMs)
             ?: run {
                 activeSegment = null
                 return SkipAction.None
-        }
+            }
         activeSegment = segment
         val behavior = config.behaviorFor(segment.category)
         if (behavior == SponsorBlockSegmentBehavior.DISABLED) {
             skippedIds.add(segment.UUID)
-            nextSegmentIndex += 1
             activeSegment = null
             return SkipAction.None
         }
         
         when {
-            segment.isMuteType -> {
+            segment.isMuteType && behavior in setOf(
+                SponsorBlockSegmentBehavior.AUTOMATIC, SponsorBlockSegmentBehavior.SKIP_ONCE
+            ) -> {
                 skippedIds.add(segment.UUID)
-                nextSegmentIndex += 1
                 activeSegment = null
                 return SkipAction.Mute(
                     untilMs = segment.endTimeMs,
@@ -308,60 +287,43 @@ class SponsorBlockPlugin : PlayerPluginApi {
             }
             segment.isMarkerOnlyType -> {
                 skippedIds.add(segment.UUID)
-                nextSegmentIndex += 1
                 activeSegment = null
                 return SkipAction.None
             }
             else -> when (behavior) {
-            SponsorBlockSegmentBehavior.AUTOMATIC -> {
-            skippedIds.add(segment.UUID)
-            lastAutoSkipTime = System.currentTimeMillis() // 记录跳过时间
-            nextSegmentIndex += 1
-            activeSegment = null
-            //  记录空降助手跳过事件
-            com.android.purebilibili.core.util.AnalyticsHelper.logSponsorBlockSkip(
-                videoId = segment.UUID,
-                segmentType = segment.categoryName
-            )
-            return SkipAction.SkipTo(
-                positionMs = segment.endTimeMs,
-                reason = "已跳过: ${segment.categoryName}",
-                segmentId = segment.UUID,
-                startMs = segment.startTimeMs,
-                category = segment.category,
-                categoryName = segment.categoryName,
-                showToast = config.skipToastEnabled,
-            )
-            }
-            SponsorBlockSegmentBehavior.SKIP_ONCE -> {
-                skippedIds.add(segment.UUID)
-                nextSegmentIndex += 1
-                activeSegment = null
-                return SkipAction.SkipTo(
-                    positionMs = segment.endTimeMs,
-                    reason = "本次跳过: ${segment.categoryName}",
-                    segmentId = segment.UUID,
-                    startMs = segment.startTimeMs,
-                    category = segment.category,
-                    categoryName = segment.categoryName,
-                    showToast = config.skipToastEnabled,
-                )
-            }
-            SponsorBlockSegmentBehavior.MANUAL -> {
-                Logger.d(TAG, "🔘 显示跳过按钮: ${segment.categoryName}")
-                return SkipAction.ShowButton(
-                    skipToMs = segment.endTimeMs,
-                    label = "跳过${segment.categoryName}",
-                    segmentId = segment.UUID
-                )
-            }
-            SponsorBlockSegmentBehavior.MARKER_ONLY,
-            SponsorBlockSegmentBehavior.DISABLED -> {
-                skippedIds.add(segment.UUID)
-                nextSegmentIndex += 1
-                activeSegment = null
-                return SkipAction.None
-            }
+                SponsorBlockSegmentBehavior.AUTOMATIC,
+                SponsorBlockSegmentBehavior.SKIP_ONCE -> {
+                    skippedIds.add(segment.UUID)
+                    lastAutoSkipTime = System.currentTimeMillis()
+                    lastAutoSkipTargetMs = segment.endTimeMs
+                    activeSegment = null
+                    com.android.purebilibili.core.util.AnalyticsHelper.logSponsorBlockSkip(
+                        videoId = segment.UUID,
+                        segmentType = segment.categoryName
+                    )
+                    return SkipAction.SkipTo(
+                        positionMs = segment.endTimeMs,
+                        reason = "已跳过: ${segment.categoryName}",
+                        segmentId = segment.UUID,
+                        startMs = segment.startTimeMs,
+                        category = segment.category,
+                        categoryName = segment.categoryName,
+                        showToast = config.skipToastEnabled,
+                    )
+                }
+                SponsorBlockSegmentBehavior.MANUAL -> {
+                    return SkipAction.ShowButton(
+                        skipToMs = segment.endTimeMs,
+                        label = "跳过${segment.categoryName}",
+                        segmentId = segment.UUID
+                    )
+                }
+                SponsorBlockSegmentBehavior.MARKER_ONLY,
+                SponsorBlockSegmentBehavior.DISABLED -> {
+                    skippedIds.add(segment.UUID)
+                    activeSegment = null
+                    return SkipAction.None
+                }
             }
         }
     }
@@ -375,12 +337,11 @@ class SponsorBlockPlugin : PlayerPluginApi {
             )
         skippedIds.clear()
         skippedIds.addAll(nextSkippedIds)
-        nextSegmentIndex = findCandidateSegmentIndex(positionMs)
-        activeSegment = segments.getOrNull(nextSegmentIndex)
-            ?.takeIf { segment -> positionMs in segment.startTimeMs..segment.endTimeMs }
+        activeSegment = findSponsorSegmentAtPosition(segments, skippedIds, positionMs)
         lastPositionMs = positionMs
         if (positionMs >= 0L) {
             lastAutoSkipTime = 0L
+            lastAutoSkipTargetMs = null
         }
     }
     
@@ -454,17 +415,15 @@ class SponsorBlockPlugin : PlayerPluginApi {
         return SponsorBlockRepository.voteOnSegment(config.serverBaseUrl, config.userId, segmentId, voteType = voteType)
     }
 
-    private fun findCandidateSegmentIndex(positionMs: Long): Int {
-        val index = segments.indexOfFirst { segment -> positionMs <= segment.endTimeMs }
-        return if (index >= 0) index else segments.size
-    }
-    
     override fun onVideoEnd() {
+        loadSession.begin()
+        lastAutoSkipTargetMs = null
+        lastAutoSkipTime = 0L
+        videoNotice = null
         segments = emptyList()
         progressMarkers = emptyList()
         skippedIds.clear()
         lastPositionMs = 0
-        nextSegmentIndex = 0
         activeSegment = null
     }
 
@@ -477,12 +436,14 @@ class SponsorBlockPlugin : PlayerPluginApi {
                 config = Json.decodeFromString<SponsorBlockConfig>(jsonStr).normalized()
             } else {
                 //  没有保存的配置时，使用默认值
-                config = SponsorBlockConfig(autoSkip = true)
+                config = SponsorBlockConfig(autoSkip = true).normalized()
             }
             Logger.d(TAG, "Loaded SponsorBlock config: autoSkip=${config.autoSkip}, markerMode=${config.markerMode}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(TAG, "Failed to load config", e)
-            config = SponsorBlockConfig(autoSkip = true)
+            config = SponsorBlockConfig(autoSkip = true).normalized()
         }
     }
     
@@ -1588,9 +1549,9 @@ data class SponsorBlockConfig(
     val autoSkip: Boolean = true,
     val markerModeRaw: String = SponsorBlockMarkerMode.SPONSOR_ONLY.name,
     val skipSponsor: Boolean = true,
-    val skipIntro: Boolean = true,
-    val skipOutro: Boolean = true,
-    val skipInteraction: Boolean = true,
+    val skipIntro: Boolean = false,
+    val skipOutro: Boolean = false,
+    val skipInteraction: Boolean = false,
     val categoryBehaviorRaw: Map<String, String> = emptyMap(),
     val categoryColorHex: Map<String, String> = emptyMap(),
     val minimumSegmentDurationSeconds: Float = 0f,
@@ -1610,7 +1571,13 @@ data class SponsorBlockConfig(
             .filter { behaviorFor(it) != SponsorBlockSegmentBehavior.DISABLED }
 
     fun behaviorFor(category: String): SponsorBlockSegmentBehavior {
-        val legacyFallback = if (autoSkip) SponsorBlockSegmentBehavior.AUTOMATIC else SponsorBlockSegmentBehavior.MANUAL
+        val legacyFallback = defaultSponsorBlockCategoryBehaviors(
+            autoSkip = autoSkip,
+            skipSponsor = skipSponsor,
+            skipIntro = skipIntro,
+            skipOutro = skipOutro,
+            skipInteraction = skipInteraction,
+        )[category] ?: SponsorBlockSegmentBehavior.DISABLED
         return resolveSponsorBlockSegmentBehavior(category, categoryBehaviorRaw, legacyFallback)
     }
 

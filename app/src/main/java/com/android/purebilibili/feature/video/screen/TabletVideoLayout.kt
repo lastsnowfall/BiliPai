@@ -640,6 +640,7 @@ internal fun TabletVideoInfoPane(
         onDismiss = { pendingVideoShare = null },
     )
     ScrollableVideoInfoSection(
+        sponsorVideoNotice = success.sponsorVideoNotice,
         info = engagementSuccess.info,
         isFollowing = engagementState.isFollowing,
         isFavorited = engagementState.isFavorited,
@@ -1371,6 +1372,7 @@ private fun TabletCollectionPane(
  */
 @Composable
 private fun ScrollableVideoInfoSection(
+    sponsorVideoNotice: com.android.purebilibili.feature.plugin.SponsorVideoNotice? = null,
     info: com.android.purebilibili.data.model.response.ViewInfo,
     isFollowing: Boolean,
     isFavorited: Boolean,
@@ -1453,6 +1455,7 @@ private fun ScrollableVideoInfoSection(
                 spec = entranceSpec,
             ) {
                 VideoTitleWithDesc(
+                    sponsorVideoNotice = sponsorVideoNotice,
                     info = info,
                     videoTags = videoTags,
                     bgmList = resolveDisplayBgmList(
